@@ -43,7 +43,7 @@ a.tel{color:var(--acc)}
 <main id="app"></main>
 <nav id="nav"></nav>
 <script>
-var S={shops:[],sales:[],buys:[],items:[]},tab='home',date=today(),open=null;
+var ADMIN=false;var S={shops:[],sales:[],buys:[],items:[]},tab='home',date=today(),open=null;
 function today(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
 function save(){}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,5)}
@@ -68,10 +68,11 @@ function stockBlock(){
   var l=stockList();if(!l.length)return '';
   var low=l.filter(function(o){return o.left<=o.min});
   var h=low.length?'<div class="card" style="border-color:var(--red)"><b class="red">⚠ Low stock: '+low.map(function(o){return esc(o.name)+' ('+o.left+')'}).join(', ')+'</b></div>':'';
-  h+='<h3>Stock (purchased minus sold)</h3><div class="card">'+l.map(function(o){var lw=o.left<=o.min;return '<div class="row" data-k="'+esc(o.key)+'" onclick="setMin(this.dataset.k)"><div>'+esc(o.name)+'<small>Bought '+o.bought+' · Sold '+o.sold+' · Alert at '+o.min+'</small></div><div class="'+(lw?'red':'green')+'" style="text-align:right"><b>'+o.left+'</b>'+(lw?'<small class="red">Low stock</small>':'')+'</div></div>'}).join('')+'<small>Tap an item to change its alert level.</small></div>';
+  h+='<h3>Stock (purchased minus sold)</h3><div class="card">'+l.map(function(o){var lw=o.left<=o.min;return '<div class="row" data-k="'+esc(o.key)+'"'+(ADMIN?' onclick="setMin(this.dataset.k)"':'')+'><div>'+esc(o.name)+'<small>Bought '+o.bought+' · Sold '+o.sold+' · Alert at '+o.min+'</small></div><div class="'+(lw?'red':'green')+'" style="text-align:right"><b>'+o.left+'</b>'+(lw?'<small class="red">Low stock</small>':'')+'</div></div>'}).join('')+(ADMIN?'<small>Tap an item to change its alert level.</small>':'')+'</div>';
   return h;
 }
 function setMin(k){
+  if(!ADMIN)return;
   var it=stockList().find(function(o){return o.key===k});if(!it)return;
   var n=prompt('Alert when stock of '+it.name+' is at or below:',it.min);if(n===null)return;
   DB.add('items',{id:k,name:it.name,min:+n||0});
@@ -118,7 +119,7 @@ function sales(){
    '<label>Amount received now (₹)</label><input id="pd" type="number" inputmode="decimal" value="0">'+
    '<div class="tot" id="tt">Total: ₹0</div><button onclick="addSale()">Save entry</button></div>';
   var d=S.sales.filter(function(x){return x.date===date});
-  h+='<h3>Entries on '+date+'</h3><div class="card">'+(d.length?d.map(function(x){return '<div class="row"><div>'+esc(shopName(x.shop))+'<small>'+esc(x.item||'Payment received')+(x.qty?' · '+x.qty+' × '+x.rate:'')+'</small></div><div style="text-align:right">'+money(x.amount)+'<small>paid '+money(x.paid)+'</small><button class="sm" onclick="del(\'sales\',\''+x.id+'\')">Delete</button></div></div>'}).join(''):'<small>Nothing today.</small>')+'</div>';
+  h+='<h3>Entries on '+date+'</h3><div class="card">'+(d.length?d.map(function(x){return '<div class="row"><div>'+esc(shopName(x.shop))+'<small>'+esc(x.item||'Payment received')+(x.qty?' · '+x.qty+' × '+x.rate:'')+'</small></div><div style="text-align:right">'+money(x.amount)+'<small>paid '+money(x.paid)+'</small>'+(ADMIN?'<button class="sm" onclick="del(\'sales\',\''+x.id+'\')">Delete</button>':'')+'</div></div>'}).join(''):'<small>Nothing today.</small>')+'</div>';
   return h;
 }
 function calc(){var el=document.getElementById('tt');if(!el)return;var p=v('ty')==='p';el.textContent='Total: '+money(p?0:(+v('q')||0)*(+v('r')||0))}
@@ -132,25 +133,25 @@ function addSale(){
 
 function buys(){
   var h=dateBox()+'<div class="card"><label>Item purchased (finished juice)</label><input id="bi" list="il" placeholder="e.g. Orange juice 1L"><datalist id="il">'+stockList().map(function(o){return '<option value="'+esc(o.name)+'">'}).join('')+'</datalist>'+
-   '<label>Low stock alert at (optional)</label><input id="bm" type="number" inputmode="decimal" placeholder="default 5">'+
+   (ADMIN?'<label>Low stock alert at (optional)</label><input id="bm" type="number" inputmode="decimal" placeholder="default 5">':'')+
    '<label>Supplier (optional)</label><input id="bs">'+
    '<div class="grid"><div><label>Quantity</label><input id="bq" type="number" inputmode="decimal"></div><div><label>Rate</label><input id="br" type="number" inputmode="decimal"></div></div>'+
    '<button onclick="addBuy()">Save purchase</button></div>';
   var d=S.buys.filter(function(x){return x.date===date});
-  h+='<h3>Purchases on '+date+'</h3><div class="card">'+(d.length?d.map(function(x){return '<div class="row"><div>'+esc(x.item)+'<small>'+esc(x.supplier)+' '+x.qty+' × '+x.rate+'</small></div><div style="text-align:right">'+money(x.amount)+'<br><button class="sm" onclick="del(\'buys\',\''+x.id+'\')">Delete</button></div></div>'}).join('')+'<div class="tot">Total: '+money(sum(d,'amount'))+'</div>':'<small>Nothing today.</small>')+'</div>';
+  h+='<h3>Purchases on '+date+'</h3><div class="card">'+(d.length?d.map(function(x){return '<div class="row"><div>'+esc(x.item)+'<small>'+esc(x.supplier)+' '+x.qty+' × '+x.rate+'</small></div><div style="text-align:right">'+money(x.amount)+'<br>'+(ADMIN?'<button class="sm" onclick="del(\'buys\',\''+x.id+'\')">Delete</button>':'')+'</div></div>'}).join('')+'<div class="tot">Total: '+money(sum(d,'amount'))+'</div>':'<small>Nothing today.</small>')+'</div>';
   return h;
 }
 function addBuy(){
   var q=+v('bq')||0,r=+v('br')||0;
   if(!v('bi').trim()||!q*r){alert('Enter item, quantity and rate.');return}
   var nm=v('bi').trim(),ex=stockList().find(function(k){return k.key===ikey(nm)});if(ex)nm=ex.name;
-  if(v('bm')!=='')DB.add('items',{id:ikey(nm),name:nm,min:+v('bm')||0});
+  if(document.getElementById('bm')&&v('bm')!=='')DB.add('items',{id:ikey(nm),name:nm,min:+v('bm')||0});
   DB.add('buys',{id:uid(),date:date,item:nm,supplier:v('bs').trim(),qty:q,rate:r,amount:q*r});
 }
 
 function shops(){
   var h='<div class="card"><label>Shop name</label><input id="sn"><label>Mobile number</label><input id="sm" type="tel" inputmode="tel"><button onclick="addShop()">Add shop</button></div><div class="card">';
-  h+=S.shops.length?S.shops.map(function(s){return '<div class="row"><div>'+esc(s.name)+'<small><a class="tel" href="tel:'+esc(s.mobile)+'">'+esc(s.mobile)+'</a></small></div><div style="text-align:right">'+balTxt(bal(s.id))+'<br><button class="sm" onclick="delShop(\''+s.id+'\')">Delete</button></div></div>'}).join(''):'<small>No shops yet.</small>';
+  h+=S.shops.length?S.shops.map(function(s){return '<div class="row"><div>'+esc(s.name)+'<small><a class="tel" href="tel:'+esc(s.mobile)+'">'+esc(s.mobile)+'</a></small></div><div style="text-align:right">'+balTxt(bal(s.id))+'<br>'+(ADMIN?'<button class="sm" onclick="delShop(\''+s.id+'\')">Delete</button>':'')+'</div></div>'}).join(''):'<small>No shops yet.</small>';
   return h+'</div><small style="color:var(--mute)">Data syncs live across all logged-in devices.</small>';
 }
 function addShop(){
@@ -158,10 +159,11 @@ function addShop(){
   DB.add('shops',{id:uid(),name:v('sn').trim(),mobile:v('sm').trim()});
 }
 function delShop(id){
+  if(!ADMIN){alert('Only admin can delete.');return}
   if(S.sales.some(function(x){return x.shop===id})){alert('This shop has entries, so it cannot be deleted.');return}
   DB.del('shops',id);
 }
-function del(k,id){if(!confirm('Delete this entry?'))return;DB.del(k,id)}
+function del(k,id){if(!ADMIN){alert('Only admin can delete.');return}if(!confirm('Delete this entry?'))return;DB.del(k,id)}
 
 var rf=today().slice(0,8)+'01',rt=today();
 function setR(k,val){if(k==='f')rf=val||rf;else rt=val||rt;render()}
@@ -172,7 +174,7 @@ function report(){
    '<div class="grid" style="margin-top:10px"><div class="card stat"><small>Sales</small><b>'+money(sum(ds,'amount'))+'</b></div><div class="card stat"><small>Received</small><b class="green">'+money(sum(ds,'paid'))+'</b></div><div class="card stat"><small>Purchases</small><b>'+money(sum(db,'amount'))+'</b></div><div class="card stat"><small>Sales minus purchases</small><b>'+money(sum(ds,'amount')-sum(db,'amount'))+'</b></div></div>'+
    '<h3>Shops in this period</h3><div class="card">';
   h+=S.shops.length?S.shops.map(function(sh){var a=ds.filter(function(x){return x.shop===sh.id});return '<div class="row"><div>'+esc(sh.name)+'<small>Sales '+money(sum(a,'amount'))+' · Received '+money(sum(a,'paid'))+'</small></div><div style="text-align:right"><small>Balance now</small>'+balTxt(bal(sh.id))+'</div></div>'}).join(''):'<small>No shops.</small>';
-  return h+'</div><h3>Export to Excel (CSV)</h3><div class="card"><button style="margin-top:0" onclick="exp(\'s\')">Sales</button><button onclick="exp(\'b\')">Purchases</button><button onclick="exp(\'h\')">Shop balances</button></div>';
+  return h+'</div>'+(ADMIN?'<h3>Export to Excel (CSV)</h3><div class="card"><button style="margin-top:0" onclick="exp(\'s\')">Sales</button><button onclick="exp(\'b\')">Purchases</button><button onclick="exp(\'h\')">Shop balances</button></div>':'');
 }
 function exp(t){
   var r;
@@ -230,6 +232,7 @@ document.addEventListener('focusout',()=>{if(pending){pending=false;setTimeout((
 
 onAuthStateChanged(auth,user=>{
   unsubs.forEach(u=>u());unsubs=[];
+  window.ADMIN=!!user&&(user.email||'').toLowerCase()==='admin@frutberry.com';
   document.getElementById('login').style.display=user?'none':'block';
   document.getElementById('lo').style.display=user?'inline-block':'none';
   if(!user){S={shops:[],sales:[],buys:[],items:[]};render();return}
