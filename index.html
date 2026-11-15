@@ -39,7 +39,7 @@ a.tel{color:var(--acc)}
 <main id="app"></main>
 <nav id="nav"></nav>
 <script>
-var S={shops:[],sales:[],buys:[]},tab='home',date=today(),open=null;
+var S={shops:[],sales:[],buys:[],items:[]},tab='home',date=today(),open=null;
 function today(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
 function save(){}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,5)}
@@ -51,6 +51,27 @@ function bal(id){return S.sales.filter(function(x){return x.shop===id}).reduce(f
 function balTxt(b){return b>0?'<b class="red">'+money(b)+' due</b>':b<0?'<b class="green">'+money(-b)+' advance</b>':'<b>Nil</b>'}
 function sum(arr,k){return arr.reduce(function(a,x){return a+x[k]},0)}
 
+
+function ikey(n){return String(n==null?'':n).trim().toLowerCase()}
+function stockList(){
+  var m={};
+  S.buys.forEach(function(x){var k=ikey(x.item);if(!k)return;m[k]=m[k]||{key:k,name:x.item,bought:0,sold:0,min:5};m[k].bought+=x.qty});
+  S.sales.forEach(function(x){var k=ikey(x.item);if(m[k])m[k].sold+=x.qty});
+  S.items.forEach(function(i){if(m[i.id])m[i.id].min=i.min});
+  return Object.keys(m).map(function(k){var o=m[k];o.left=Math.round((o.bought-o.sold)*100)/100;return o}).sort(function(a,b){return a.name.toLowerCase()<b.name.toLowerCase()?-1:1});
+}
+function stockBlock(){
+  var l=stockList();if(!l.length)return '';
+  var low=l.filter(function(o){return o.left<=o.min});
+  var h=low.length?'<div class="card" style="border-color:var(--red)"><b class="red">⚠ Low stock: '+low.map(function(o){return esc(o.name)+' ('+o.left+')'}).join(', ')+'</b></div>':'';
+  h+='<h3>Stock (purchased minus sold)</h3><div class="card">'+l.map(function(o){var lw=o.left<=o.min;return '<div class="row" data-k="'+esc(o.key)+'" onclick="setMin(this.dataset.k)"><div>'+esc(o.name)+'<small>Bought '+o.bought+' · Sold '+o.sold+' · Alert at '+o.min+'</small></div><div class="'+(lw?'red':'green')+'" style="text-align:right"><b>'+o.left+'</b>'+(lw?'<small class="red">Low stock</small>':'')+'</div></div>'}).join('')+'<small>Tap an item to change its alert level.</small></div>';
+  return h;
+}
+function setMin(k){
+  var it=stockList().find(function(o){return o.key===k});if(!it)return;
+  var n=prompt('Alert when stock of '+it.name+' is at or below:',it.min);if(n===null)return;
+  DB.add('items',{id:k,name:it.name,min:+n||0});
+}
 function go(t){tab=t;open=null;render()}
 function setDate(d){date=d||today();render()}
 function dateBox(){return '<label>Date</label><input type="date" value="'+date+'" onchange="setDate(this.value)">'}
@@ -71,7 +92,7 @@ function home(){
    '<div class="card stat"><small>Received</small><b class="green">'+money(sum(ds,'paid'))+'</b></div>'+
    '<div class="card stat"><small>Purchases</small><b>'+money(sum(db,'amount'))+'</b></div>'+
    '<div class="card stat"><small>Total to collect</small><b class="red">'+money(out)+'</b></div></div>'+
-   '<h3>Shop balances (credit / debit)</h3><div class="card">';
+   stockBlock()+'<h3>Shop balances (credit / debit)</h3><div class="card">';
   h+=S.shops.length?S.shops.map(function(s){return '<div class="row" onclick="open=\''+s.id+'\';render()"><div>'+esc(s.name)+'<small>'+esc(s.mobile)+'</small></div><div>'+balTxt(bal(s.id))+'</div></div>'}).join(''):'<small>Add shops first in the Shops tab.</small>';
   return h+'</div>';
 }
@@ -88,7 +109,7 @@ function sales(){
   if(!S.shops.length)return '<div class="card">Add a shop first in the Shops tab.</div>';
   var h=dateBox()+'<div class="card"><label>Shop</label><select id="sh">'+S.shops.map(function(s){return '<option value="'+s.id+'">'+esc(s.name)+'</option>'}).join('')+'</select>'+
    '<label>Entry type</label><select id="ty" onchange="calc()"><option value="s">Sale (juice items)</option><option value="p">Payment received only</option></select>'+
-   '<label>Item</label><input id="it" placeholder="e.g. Orange juice 1L">'+
+   '<label>Item (from purchases)</label><select id="it"><option value="">Choose item</option>'+stockList().map(function(o){return '<option value="'+esc(o.name)+'">'+esc(o.name)+' — '+o.left+' left</option>'}).join('')+'</select>'+
    '<div class="grid"><div><label>Quantity</label><input id="q" type="number" inputmode="decimal" oninput="calc()"></div><div><label>Rate</label><input id="r" type="number" inputmode="decimal" oninput="calc()"></div></div>'+
    '<label>Amount received now (₹)</label><input id="pd" type="number" inputmode="decimal" value="0">'+
    '<div class="tot" id="tt">Total: ₹0</div><button onclick="addSale()">Save entry</button></div>';
@@ -101,11 +122,13 @@ function addSale(){
   var p=v('ty')==='p',q=+v('q')||0,r=+v('r')||0,paid=+v('pd')||0,amt=p?0:q*r;
   if(!p&&(!v('it').trim()||!amt)){alert('Enter item, quantity and rate.');return}
   if(p&&!paid){alert('Enter the amount received.');return}
+  if(!p){var si=stockList().find(function(k){return k.key===ikey(v('it'))});if(si&&q>si.left&&!confirm('Only '+si.left+' in stock. Continue?'))return}
   DB.add('sales',{id:uid(),date:date,shop:v('sh'),item:p?'':v('it').trim(),qty:p?0:q,rate:p?0:r,amount:amt,paid:paid});
 }
 
 function buys(){
-  var h=dateBox()+'<div class="card"><label>Item purchased</label><input id="bi" placeholder="e.g. Oranges, bottles">'+
+  var h=dateBox()+'<div class="card"><label>Item purchased (finished juice)</label><input id="bi" list="il" placeholder="e.g. Orange juice 1L"><datalist id="il">'+stockList().map(function(o){return '<option value="'+esc(o.name)+'">'}).join('')+'</datalist>'+
+   '<label>Low stock alert at (optional)</label><input id="bm" type="number" inputmode="decimal" placeholder="default 5">'+
    '<label>Supplier (optional)</label><input id="bs">'+
    '<div class="grid"><div><label>Quantity</label><input id="bq" type="number" inputmode="decimal"></div><div><label>Rate</label><input id="br" type="number" inputmode="decimal"></div></div>'+
    '<button onclick="addBuy()">Save purchase</button></div>';
@@ -116,7 +139,9 @@ function buys(){
 function addBuy(){
   var q=+v('bq')||0,r=+v('br')||0;
   if(!v('bi').trim()||!q*r){alert('Enter item, quantity and rate.');return}
-  DB.add('buys',{id:uid(),date:date,item:v('bi').trim(),supplier:v('bs').trim(),qty:q,rate:r,amount:q*r});
+  var nm=v('bi').trim(),ex=stockList().find(function(k){return k.key===ikey(nm)});if(ex)nm=ex.name;
+  if(v('bm')!=='')DB.add('items',{id:ikey(nm),name:nm,min:+v('bm')||0});
+  DB.add('buys',{id:uid(),date:date,item:nm,supplier:v('bs').trim(),qty:q,rate:r,amount:q*r});
 }
 
 function shops(){
@@ -203,8 +228,8 @@ onAuthStateChanged(auth,user=>{
   unsubs.forEach(u=>u());unsubs=[];
   document.getElementById('login').style.display=user?'none':'block';
   document.getElementById('lo').style.display=user?'inline-block':'none';
-  if(!user){S={shops:[],sales:[],buys:[]};render();return}
-  ['shops','sales','buys'].forEach(k=>{
+  if(!user){S={shops:[],sales:[],buys:[],items:[]};render();return}
+  ['shops','sales','buys','items'].forEach(k=>{
     unsubs.push(onSnapshot(collection(db,k),snap=>{S[k]=snap.docs.map(d=>d.data());refresh()},e=>alert('Sync error: '+e.message)));
   });
 });
