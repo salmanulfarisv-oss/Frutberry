@@ -141,15 +141,16 @@ import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase
 import {initializeFirestore,persistentLocalCache,collection,doc,setDoc,deleteDoc,onSnapshot} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {getAuth,signInWithEmailAndPassword,onAuthStateChanged,signOut} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-// PASTE YOUR FIREBASE CONFIG HERE (Firebase Console > Project settings > Your apps > Web app)
+// ===== FIREBASE CONFIG: only replace PASTE_YOUR_API_KEY_HERE with your apiKey =====
 const firebaseConfig={
-  apiKey:"YOUR_API_KEY",
-  authDomain:"YOUR_PROJECT.firebaseapp.com",
-  projectId:"YOUR_PROJECT_ID",
-  storageBucket:"YOUR_PROJECT.appspot.com",
-  messagingSenderId:"YOUR_SENDER_ID",
-  appId:"YOUR_APP_ID"
+  apiKey:"PASTE_YOUR_API_KEY_HERE",
+  authDomain:"frutberry-925b0.firebaseapp.com",
+  projectId:"frutberry-925b0",
+  storageBucket:"frutberry-925b0.firebasestorage.app",
+  messagingSenderId:"723247584531",
+  appId:"1:723247584531:web:4c1d898d629ff6642db6e6"
 };
+// ===== END CONFIG =====
 
 const app=initializeApp(firebaseConfig);
 const db=initializeFirestore(app,{localCache:persistentLocalCache()});
@@ -161,9 +162,11 @@ window.DB={
   del:(k,id)=>deleteDoc(doc(db,k,id)).catch(e=>alert('Delete failed: '+e.message))
 };
 window.doLogin=()=>{
-  document.getElementById('err').textContent='';
+  const err=document.getElementById('err');err.textContent='';
+  if(firebaseConfig.apiKey.indexOf('PASTE_')===0){err.textContent='apiKey is not set in index.html yet.';return}
+  const msgs={'auth/invalid-credential':'Wrong email or password.','auth/invalid-email':'Enter a valid email.','auth/user-not-found':'No such user in Firebase.','auth/wrong-password':'Wrong password.','auth/api-key-not-valid.-please-pass-a-valid-api-key.':'apiKey in index.html is wrong.','auth/invalid-api-key':'apiKey in index.html is wrong.','auth/operation-not-allowed':'Enable Email/Password in Firebase Authentication.','auth/unauthorized-domain':'Add this domain in Firebase Authorized domains.','auth/network-request-failed':'No internet connection.','auth/too-many-requests':'Too many attempts. Try later.'};
   signInWithEmailAndPassword(auth,document.getElementById('em').value.trim(),document.getElementById('pw').value)
-    .catch(e=>{document.getElementById('err').textContent='Login failed: '+e.code});
+    .catch(e=>{err.textContent=(msgs[e.code]||'Login failed')+' ['+e.code+']'});
 };
 window.logout=()=>signOut(auth);
 
