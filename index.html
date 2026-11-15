@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Frutberry – Juice Supply Ledger</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+--bg:#fbf7f0;--card:#fff;--ink:#2a2118;--mute:#7a6c5d;--line:#e8dfd2;--acc:#e8750a;--accink:#fff;--red:#c0392b;--green:#1e8a4c}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1b1713;--card:#272019;--ink:#f3ebe0;--mute:#a89886;--line:#3a3025;--acc:#f08a24;--accink:#1b1713;--red:#ff7b6b;--green:#4cc983}}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding-bottom:70px}
+header{padding:14px 16px 6px;font-weight:700;font-size:20px}
+main{padding:8px 14px;max-width:640px;margin:auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin:10px 0}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.stat small{color:var(--mute);display:block;font-size:12px}
+.stat b{font-size:20px}
+label{font-size:12px;color:var(--mute);display:block;margin-top:8px}
+input,select{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit}
+button{font:inherit;border:0;border-radius:8px;padding:11px 14px;background:var(--acc);color:var(--accink);font-weight:600;width:100%;margin-top:12px}
+button.sm{width:auto;padding:4px 10px;margin:0;background:transparent;color:var(--red);border:1px solid var(--line);font-weight:400}
+.row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border:0}
+.row small{color:var(--mute);display:block}
+.red{color:var(--red)}.green{color:var(--green)}
+nav{position:fixed;left:0;right:0;bottom:0;display:flex;background:var(--card);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
+nav a{flex:1;text-align:center;padding:12px 0;color:var(--mute);font-size:14px;text-decoration:none}
+nav a.on{color:var(--acc);font-weight:700}
+h3{margin:14px 0 2px;font-size:15px}
+a.tel{color:var(--acc)}
+.tot{font-weight:700;margin-top:8px}
+#login{position:fixed;inset:0;background:var(--bg);z-index:9;padding:60px 20px;display:block}#login .card{max-width:360px;margin:auto}#err{color:var(--red);font-size:13px;margin-top:8px}
+</style>
+</head>
+<body>
+<header style="display:flex;justify-content:space-between;align-items:center">🍓 Frutberry<button id="lo" class="sm" style="display:none;color:var(--mute)" onclick="logout()">Logout</button></header>
+<main id="app"></main>
+<nav id="nav"></nav>
+<script>
+var S={shops:[],sales:[],buys:[]},tab='home',date=today(),open=null;
+function today(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+function save(){}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,5)}
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+function money(n){return '₹'+(Math.round(n*100)/100).toLocaleString('en-IN')}
+function v(id){return document.getElementById(id).value}
+function shopName(id){var s=S.shops.find(function(x){return x.id===id});return s?s.name:'(deleted)'}
+function bal(id){return S.sales.filter(function(x){return x.shop===id}).reduce(function(a,x){return a+x.amount-x.paid},0)}
+function balTxt(b){return b>0?'<b class="red">'+money(b)+' due</b>':b<0?'<b class="green">'+money(-b)+' advance</b>':'<b>Nil</b>'}
+function sum(arr,k){return arr.reduce(function(a,x){return a+x[k]},0)}
+
+function go(t){tab=t;open=null;render()}
+function setDate(d){date=d||today();render()}
+function dateBox(){return '<label>Date</label><input type="date" value="'+date+'" onchange="setDate(this.value)">'}
+
+function render(){
+  var tabs=[['home','Summary'],['sales','Sales'],['buys','Purchase'],['shops','Shops']];
+  document.getElementById('nav').innerHTML=tabs.map(function(t){return '<a href="#" class="'+(tab===t[0]?'on':'')+'" onclick="go(\''+t[0]+'\');return false">'+t[1]+'</a>'}).join('');
+  var h={home:home,sales:sales,buys:buys,shops:shops}[tab]();
+  document.getElementById('app').innerHTML=h;
+}
+
+function home(){
+  if(open)return ledger(open);
+  var ds=S.sales.filter(function(x){return x.date===date}),db=S.buys.filter(function(x){return x.date===date});
+  var out=S.shops.reduce(function(a,s){var b=bal(s.id);return a+(b>0?b:0)},0);
+  var h=dateBox()+'<div class="grid" style="margin-top:10px">'+
+   '<div class="card stat"><small>Sales</small><b>'+money(sum(ds,'amount'))+'</b></div>'+
+   '<div class="card stat"><small>Received</small><b class="green">'+money(sum(ds,'paid'))+'</b></div>'+
+   '<div class="card stat"><small>Purchases</small><b>'+money(sum(db,'amount'))+'</b></div>'+
+   '<div class="card stat"><small>Total to collect</small><b class="red">'+money(out)+'</b></div></div>'+
+   '<h3>Shop balances (credit / debit)</h3><div class="card">';
+  h+=S.shops.length?S.shops.map(function(s){return '<div class="row" onclick="open=\''+s.id+'\';render()"><div>'+esc(s.name)+'<small>'+esc(s.mobile)+'</small></div><div>'+balTxt(bal(s.id))+'</div></div>'}).join(''):'<small>Add shops first in the Shops tab.</small>';
+  return h+'</div>';
+}
+
+function ledger(id){
+  var rows=S.sales.filter(function(x){return x.shop===id}).sort(function(a,b){return a.date<b.date?-1:1}),run=0;
+  var s=S.shops.find(function(x){return x.id===id})||{name:'',mobile:''};
+  var h='<button class="sm" style="color:var(--acc)" onclick="open=null;render()">← Back</button><h3>'+esc(s.name)+'</h3><small>'+esc(s.mobile)+'</small><div class="card">';
+  h+=rows.length?rows.map(function(x){run+=x.amount-x.paid;return '<div class="row"><div>'+esc(x.item||'Payment received')+'<small>'+x.date+(x.qty?' · '+x.qty+' × '+x.rate:'')+'</small></div><div style="text-align:right">'+(x.amount?'Sale '+money(x.amount)+'<br>':'')+(x.paid?'<span class="green">Paid '+money(x.paid)+'</span><br>':'')+'<small>Balance '+money(run)+'</small></div></div>'}).join(''):'<small>No entries yet.</small>';
+  return h+'</div><div class="tot">Current balance: '+balTxt(bal(id))+'</div>';
+}
+
+function sales(){
+  if(!S.shops.length)return '<div class="card">Add a shop first in the Shops tab.</div>';
+  var h=dateBox()+'<div class="card"><label>Shop</label><select id="sh">'+S.shops.map(function(s){return '<option value="'+s.id+'">'+esc(s.name)+'</option>'}).join('')+'</select>'+
+   '<label>Entry type</label><select id="ty" onchange="calc()"><option value="s">Sale (juice items)</option><option value="p">Payment received only</option></select>'+
+   '<label>Item</label><input id="it" placeholder="e.g. Orange juice 1L">'+
+   '<div class="grid"><div><label>Quantity</label><input id="q" type="number" inputmode="decimal" oninput="calc()"></div><div><label>Rate</label><input id="r" type="number" inputmode="decimal" oninput="calc()"></div></div>'+
+   '<label>Amount received now (₹)</label><input id="pd" type="number" inputmode="decimal" value="0">'+
+   '<div class="tot" id="tt">Total: ₹0</div><button onclick="addSale()">Save entry</button></div>';
+  var d=S.sales.filter(function(x){return x.date===date});
+  h+='<h3>Entries on '+date+'</h3><div class="card">'+(d.length?d.map(function(x){return '<div class="row"><div>'+esc(shopName(x.shop))+'<small>'+esc(x.item||'Payment received')+(x.qty?' · '+x.qty+' × '+x.rate:'')+'</small></div><div style="text-align:right">'+money(x.amount)+'<small>paid '+money(x.paid)+'</small><button class="sm" onclick="del(\'sales\',\''+x.id+'\')">Delete</button></div></div>'}).join(''):'<small>Nothing today.</small>')+'</div>';
+  return h;
+}
+function calc(){var el=document.getElementById('tt');if(!el)return;var p=v('ty')==='p';el.textContent='Total: '+money(p?0:(+v('q')||0)*(+v('r')||0))}
+function addSale(){
+  var p=v('ty')==='p',q=+v('q')||0,r=+v('r')||0,paid=+v('pd')||0,amt=p?0:q*r;
+  if(!p&&(!v('it').trim()||!amt)){alert('Enter item, quantity and rate.');return}
+  if(p&&!paid){alert('Enter the amount received.');return}
+  DB.add('sales',{id:uid(),date:date,shop:v('sh'),item:p?'':v('it').trim(),qty:p?0:q,rate:p?0:r,amount:amt,paid:paid});
+}
+
+function buys(){
+  var h=dateBox()+'<div class="card"><label>Item purchased</label><input id="bi" placeholder="e.g. Oranges, bottles">'+
+   '<label>Supplier (optional)</label><input id="bs">'+
+   '<div class="grid"><div><label>Quantity</label><input id="bq" type="number" inputmode="decimal"></div><div><label>Rate</label><input id="br" type="number" inputmode="decimal"></div></div>'+
+   '<button onclick="addBuy()">Save purchase</button></div>';
+  var d=S.buys.filter(function(x){return x.date===date});
+  h+='<h3>Purchases on '+date+'</h3><div class="card">'+(d.length?d.map(function(x){return '<div class="row"><div>'+esc(x.item)+'<small>'+esc(x.supplier)+' '+x.qty+' × '+x.rate+'</small></div><div style="text-align:right">'+money(x.amount)+'<br><button class="sm" onclick="del(\'buys\',\''+x.id+'\')">Delete</button></div></div>'}).join('')+'<div class="tot">Total: '+money(sum(d,'amount'))+'</div>':'<small>Nothing today.</small>')+'</div>';
+  return h;
+}
+function addBuy(){
+  var q=+v('bq')||0,r=+v('br')||0;
+  if(!v('bi').trim()||!q*r){alert('Enter item, quantity and rate.');return}
+  DB.add('buys',{id:uid(),date:date,item:v('bi').trim(),supplier:v('bs').trim(),qty:q,rate:r,amount:q*r});
+}
+
+function shops(){
+  var h='<div class="card"><label>Shop name</label><input id="sn"><label>Mobile number</label><input id="sm" type="tel" inputmode="tel"><button onclick="addShop()">Add shop</button></div><div class="card">';
+  h+=S.shops.length?S.shops.map(function(s){return '<div class="row"><div>'+esc(s.name)+'<small><a class="tel" href="tel:'+esc(s.mobile)+'">'+esc(s.mobile)+'</a></small></div><div style="text-align:right">'+balTxt(bal(s.id))+'<br><button class="sm" onclick="delShop(\''+s.id+'\')">Delete</button></div></div>'}).join(''):'<small>No shops yet.</small>';
+  return h+'</div><small style="color:var(--mute)">Data syncs live across all logged-in devices.</small>';
+}
+function addShop(){
+  if(!v('sn').trim()){alert('Enter shop name.');return}
+  DB.add('shops',{id:uid(),name:v('sn').trim(),mobile:v('sm').trim()});
+}
+function delShop(id){
+  if(S.sales.some(function(x){return x.shop===id})){alert('This shop has entries, so it cannot be deleted.');return}
+  DB.del('shops',id);
+}
+function del(k,id){if(!confirm('Delete this entry?'))return;DB.del(k,id)}
+render();
+</script>
+<div id="login"><div class="card"><h3 style="margin-top:0">🍓 Frutberry login</h3><label>Email</label><input id="em" type="email" autocomplete="username"><label>Password</label><input id="pw" type="password" autocomplete="current-password"><button onclick="doLogin()">Login</button><div id="err"></div></div></div>
+<script type="module">
+import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {initializeFirestore,persistentLocalCache,collection,doc,setDoc,deleteDoc,onSnapshot} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {getAuth,signInWithEmailAndPassword,onAuthStateChanged,signOut} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+// PASTE YOUR FIREBASE CONFIG HERE (Firebase Console > Project settings > Your apps > Web app)
+const firebaseConfig={
+  apiKey:"YOUR_API_KEY",
+  authDomain:"YOUR_PROJECT.firebaseapp.com",
+  projectId:"YOUR_PROJECT_ID",
+  storageBucket:"YOUR_PROJECT.appspot.com",
+  messagingSenderId:"YOUR_SENDER_ID",
+  appId:"YOUR_APP_ID"
+};
+
+const app=initializeApp(firebaseConfig);
+const db=initializeFirestore(app,{localCache:persistentLocalCache()});
+const auth=getAuth(app);
+let unsubs=[],pending=false;
+
+window.DB={
+  add:(k,o)=>setDoc(doc(db,k,o.id),o).catch(e=>alert('Save failed: '+e.message)),
+  del:(k,id)=>deleteDoc(doc(db,k,id)).catch(e=>alert('Delete failed: '+e.message))
+};
+window.doLogin=()=>{
+  document.getElementById('err').textContent='';
+  signInWithEmailAndPassword(auth,document.getElementById('em').value.trim(),document.getElementById('pw').value)
+    .catch(e=>{document.getElementById('err').textContent='Login failed: '+e.code});
+};
+window.logout=()=>signOut(auth);
+
+function refresh(){
+  const a=document.activeElement;
+  if(a&&(a.tagName==='INPUT'||a.tagName==='SELECT')&&a.type!=='date'){pending=true;return}
+  render();
+}
+document.addEventListener('focusout',()=>{if(pending){pending=false;setTimeout(()=>{const a=document.activeElement;if(!a||a.tagName!=='INPUT')render()},200)}});
+
+onAuthStateChanged(auth,user=>{
+  unsubs.forEach(u=>u());unsubs=[];
+  document.getElementById('login').style.display=user?'none':'block';
+  document.getElementById('lo').style.display=user?'inline-block':'none';
+  if(!user){S={shops:[],sales:[],buys:[]};render();return}
+  ['shops','sales','buys'].forEach(k=>{
+    unsubs.push(onSnapshot(collection(db,k),snap=>{S[k]=snap.docs.map(d=>d.data());refresh()},e=>alert('Sync error: '+e.message)));
+  });
+});
+</script>
+</body>
+</html>
