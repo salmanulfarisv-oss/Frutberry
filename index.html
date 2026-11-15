@@ -56,9 +56,9 @@ function setDate(d){date=d||today();render()}
 function dateBox(){return '<label>Date</label><input type="date" value="'+date+'" onchange="setDate(this.value)">'}
 
 function render(){
-  var tabs=[['home','Summary'],['sales','Sales'],['buys','Purchase'],['shops','Shops']];
+  var tabs=[['home','Summary'],['sales','Sales'],['buys','Purchase'],['rep','Report'],['shops','Shops']];
   document.getElementById('nav').innerHTML=tabs.map(function(t){return '<a href="#" class="'+(tab===t[0]?'on':'')+'" onclick="go(\''+t[0]+'\');return false">'+t[1]+'</a>'}).join('');
-  var h={home:home,sales:sales,buys:buys,shops:shops}[tab]();
+  var h={home:home,sales:sales,buys:buys,rep:report,shops:shops}[tab]();
   document.getElementById('app').innerHTML=h;
 }
 
@@ -133,6 +133,28 @@ function delShop(id){
   DB.del('shops',id);
 }
 function del(k,id){if(!confirm('Delete this entry?'))return;DB.del(k,id)}
+
+var rf=today().slice(0,8)+'01',rt=today();
+function setR(k,val){if(k==='f')rf=val||rf;else rt=val||rt;render()}
+function inR(x){return x.date>=rf&&x.date<=rt}
+function report(){
+  var ds=S.sales.filter(inR),db=S.buys.filter(inR);
+  var h='<div class="grid"><div><label>From</label><input type="date" value="'+rf+'" onchange="setR(\'f\',this.value)"></div><div><label>To</label><input type="date" value="'+rt+'" onchange="setR(\'t\',this.value)"></div></div>'+
+   '<div class="grid" style="margin-top:10px"><div class="card stat"><small>Sales</small><b>'+money(sum(ds,'amount'))+'</b></div><div class="card stat"><small>Received</small><b class="green">'+money(sum(ds,'paid'))+'</b></div><div class="card stat"><small>Purchases</small><b>'+money(sum(db,'amount'))+'</b></div><div class="card stat"><small>Sales minus purchases</small><b>'+money(sum(ds,'amount')-sum(db,'amount'))+'</b></div></div>'+
+   '<h3>Shops in this period</h3><div class="card">';
+  h+=S.shops.length?S.shops.map(function(sh){var a=ds.filter(function(x){return x.shop===sh.id});return '<div class="row"><div>'+esc(sh.name)+'<small>Sales '+money(sum(a,'amount'))+' · Received '+money(sum(a,'paid'))+'</small></div><div style="text-align:right"><small>Balance now</small>'+balTxt(bal(sh.id))+'</div></div>'}).join(''):'<small>No shops.</small>';
+  return h+'</div><h3>Export to Excel (CSV)</h3><div class="card"><button style="margin-top:0" onclick="exp(\'s\')">Sales</button><button onclick="exp(\'b\')">Purchases</button><button onclick="exp(\'h\')">Shop balances</button></div>';
+}
+function exp(t){
+  var r;
+  if(t==='s'){r=[['Date','Shop','Mobile','Item','Qty','Rate','Amount','Received']].concat(S.sales.filter(inR).sort(function(a,b){return a.date<b.date?-1:1}).map(function(x){var sh=S.shops.find(function(q){return q.id===x.shop})||{};return [x.date,sh.name||'',sh.mobile||'',x.item||'Payment received',x.qty,x.rate,x.amount,x.paid]}))}
+  else if(t==='b'){r=[['Date','Item','Supplier','Qty','Rate','Amount']].concat(S.buys.filter(inR).map(function(x){return [x.date,x.item,x.supplier,x.qty,x.rate,x.amount]}))}
+  else{r=[['Shop','Mobile','Total sales','Total received','Balance (positive = shop owes)']].concat(S.shops.map(function(sh){var a=S.sales.filter(function(x){return x.shop===sh.id});return [sh.name,sh.mobile,sum(a,'amount'),sum(a,'paid'),bal(sh.id)]}))}
+  var c='\ufeff'+r.map(function(row){return row.map(function(c){return '"'+String(c==null?'':c).replace(/"/g,'""')+'"'}).join(',')}).join('\r\n');
+  var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([c],{type:'text/csv;charset=utf-8'}));
+  a.download='frutberry-'+({s:'sales',b:'purchases',h:'balances'}[t])+'-'+rf+'-to-'+rt+'.csv';
+  document.body.appendChild(a);a.click();a.remove();
+}
 render();
 </script>
 <div id="login"><div class="card"><h3 style="margin-top:0">🍓 Frutberry login</h3><label>Email</label><input id="em" type="email" autocomplete="username"><label>Password</label><input id="pw" type="password" autocomplete="current-password"><button onclick="doLogin()">Login</button><div id="err"></div></div></div>
