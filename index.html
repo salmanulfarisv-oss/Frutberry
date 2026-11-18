@@ -78,6 +78,10 @@ function setMin(k){
   var n=prompt('Alert when stock of '+it.name+' is at or below:',it.min);if(n===null)return;
   DB.add('items',{id:k,name:it.name,min:+n||0});
 }
+var areaF='';
+function areas(){var m={};S.shops.forEach(function(x){var a=(x.place||'').trim();if(a)m[a.toLowerCase()]=m[a.toLowerCase()]||a});return Object.keys(m).map(function(k){return m[k]}).sort()}
+function setArea(a){areaF=a;render()}
+function shopsF(){return areaF?S.shops.filter(function(x){return (x.place||'').trim().toLowerCase()===areaF.toLowerCase()}):S.shops}
 function go(t){tab=t;open=null;render()}
 function setDate(d){date=d||today();render()}
 function dateBox(){return '<label>Date</label><input type="date" value="'+date+'" onchange="setDate(this.value)">'}
@@ -98,15 +102,15 @@ function home(){
    '<div class="card stat"><small>Received</small><b class="green">'+money(sum(ds,'paid'))+'</b></div>'+
    '<div class="card stat"><small>Purchases</small><b>'+money(sum(db,'amount'))+'</b></div>'+
    '<div class="card stat"><small>Total to collect</small><b class="red">'+money(out)+'</b></div></div>'+
-   stockBlock()+'<h3>Shop balances (credit / debit)</h3><div class="card">';
-  h+=S.shops.length?S.shops.map(function(s){return '<div class="row" onclick="open=\''+s.id+'\';render()"><div>'+esc(s.name)+'<small>'+esc(s.mobile)+'</small></div><div>'+balTxt(bal(s.id))+'</div></div>'}).join(''):'<small>Add shops first in the Shops tab.</small>';
+   stockBlock()+'<h3>Shop balances (credit / debit)</h3>'+(areas().length?'<select onchange="setArea(this.value)"><option value="">All areas</option>'+areas().map(function(a){return '<option value="'+esc(a)+'"'+(a.toLowerCase()===areaF.toLowerCase()?' selected':'')+'>'+esc(a)+'</option>'}).join('')+'</select>':'')+(areaF?'<div class="tot">Due in '+esc(areaF)+': '+money(shopsF().reduce(function(a,x){var b=bal(x.id);return a+(b>0?b:0)},0))+'</div>':'')+'<div class="card">';
+  h+=shopsF().length?shopsF().map(function(s){return '<div class="row" onclick="open=\''+s.id+'\';render()"><div>'+esc(s.name)+(s.place?' · '+esc(s.place):'')+'<small>'+esc(s.mobile)+'</small></div><div>'+balTxt(bal(s.id))+'</div></div>'}).join(''):'<small>Add shops first in the Shops tab.</small>';
   return h+'</div>';
 }
 
 function ledger(id){
   var rows=S.sales.filter(function(x){return x.shop===id}).sort(function(a,b){return a.date<b.date?-1:1}),run=0;
   var s=S.shops.find(function(x){return x.id===id})||{name:'',mobile:''};
-  var h='<button class="sm" style="color:var(--acc)" onclick="open=null;render()">← Back</button><h3>'+esc(s.name)+'</h3><small>'+esc(s.mobile)+'</small><div class="card">';
+  var h='<button class="sm" style="color:var(--acc)" onclick="open=null;render()">← Back</button><h3>'+esc(s.name)+(s.place?' · '+esc(s.place):'')+'</h3><small>'+esc(s.mobile)+'</small><div class="card">';
   h+=rows.length?rows.map(function(x){run+=x.amount-x.paid;return '<div class="row"><div>'+(x.bill?'#'+x.bill+' · ':'')+esc(x.item||'Payment received')+'<small>'+x.date+(x.qty?' · '+x.qty+' × '+x.rate:'')+'</small></div><div style="text-align:right">'+(x.amount?'Sale '+money(x.amount)+'<br>':'')+(x.paid?'<span class="green">Paid '+money(x.paid)+'</span><br>':'')+'<small>Balance '+money(run)+'</small></div></div>'}).join(''):'<small>No entries yet.</small>';
   return h+'</div><div class="tot">Current balance: '+balTxt(bal(id))+'</div>';
 }
@@ -118,7 +122,7 @@ function cartQty(k){return cart.filter(function(l){return ikey(l.item)===k}).red
 function sales(){
   if(!S.shops.length)return '<div class="card">Add a shop first in the Shops tab.</div>';
   var tot=cart.reduce(function(a,l){return a+l.qty*l.rate},0);
-  var h=billCard()+dateBox()+'<div class="card"><label>Shop</label><select id="sh" onchange="remember()">'+S.shops.map(function(s){return '<option value="'+s.id+'"'+(s.id===curShop?' selected':'')+'>'+esc(s.name)+'</option>'}).join('')+'</select>'+
+  var h=billCard()+dateBox()+'<div class="card"><label>Shop</label><select id="sh" onchange="remember()">'+S.shops.map(function(s){return '<option value="'+s.id+'"'+(s.id===curShop?' selected':'')+'>'+esc(s.name)+(s.place?' — '+esc(s.place):'')+'</option>'}).join('')+'</select>'+
    '<h3>Add items to bill</h3><label>Item (from purchases)</label><select id="it"><option value="">Choose item</option>'+stockList().map(function(o){return '<option value="'+esc(o.name)+'">'+esc(o.name)+' — '+o.left+' left</option>'}).join('')+'</select>'+
    '<div class="grid"><div><label>Quantity</label><input id="q" type="number" inputmode="decimal"></div><div><label>Rate</label><input id="r" type="number" inputmode="decimal"></div></div>'+
    '<button onclick="addLine()">+ Add to bill</button></div>';
@@ -162,14 +166,14 @@ function billData(n){
   return {no:n,date:L[0].date,shop:sh,lines:L,total:sum(L,'amount'),paid:sum(L,'paid'),bal:bal(L[0].shop)};
 }
 function billText(b){
-  var t='*Frutberry*\nBill #'+b.no+'  '+b.date+'\nShop: '+b.shop.name+'\n\n';
+  var t='*Frutberry*\nBill #'+b.no+'  '+b.date+'\nShop: '+b.shop.name+(b.shop.place?', '+b.shop.place:'')+'\n\n';
   b.lines.forEach(function(l){t+=l.item+' '+l.qty+' x '+l.rate+' = '+money(l.amount)+'\n'});
   t+='\nTotal: '+money(b.total)+'\nPaid: '+money(b.paid)+'\nDue on this bill: '+money(b.total-b.paid)+'\nShop balance: '+(b.bal>0?money(b.bal)+' due':b.bal<0?money(-b.bal)+' advance':'Nil')+'\nThank you!';
   return t;
 }
 function billCard(){
   if(!openBill)return '';var b=billData(openBill);if(!b)return '';
-  return '<div class="card" id="bill"><b>🍓 Frutberry — Bill #'+b.no+'</b><small style="color:var(--mute);display:block">'+b.date+' · '+esc(b.shop.name)+'</small>'+
+  return '<div class="card" id="bill"><b>🍓 Frutberry — Bill #'+b.no+'</b><small style="color:var(--mute);display:block">'+b.date+' · '+esc(b.shop.name)+(b.shop.place?', '+esc(b.shop.place):'')+'</small>'+
    b.lines.map(function(l){return '<div class="row"><div>'+esc(l.item)+'<small>'+l.qty+' × '+l.rate+'</small></div><div>'+money(l.amount)+'</div></div>'}).join('')+
    '<div class="tot">Total: '+money(b.total)+'</div><div>Paid: '+money(b.paid)+' · Due on bill: '+money(b.total-b.paid)+'</div><div>Shop balance: '+balTxt(b.bal)+'</div>'+
    '<div class="grid no-print"><button onclick="shareBill()">WhatsApp</button><button onclick="window.print()">Print / PDF</button></div>'+
@@ -197,18 +201,26 @@ function addBuy(){
 }
 
 function shops(){
-  var h='<div class="card"><label>Shop name</label><input id="sn"><label>Mobile number</label><input id="sm" type="tel" inputmode="tel"><button onclick="addShop()">Add shop</button></div><div class="card">';
-  h+=S.shops.length?S.shops.map(function(s){return '<div class="row"><div>'+esc(s.name)+'<small><a class="tel" href="tel:'+esc(s.mobile)+'">'+esc(s.mobile)+'</a></small></div><div style="text-align:right">'+balTxt(bal(s.id))+'<br>'+(ADMIN?'<button class="sm" onclick="delShop(\''+s.id+'\')">Delete</button>':'')+'</div></div>'}).join(''):'<small>No shops yet.</small>';
+  var h='<div class="card"><label>Shop name</label><input id="sn"><label>Shop area</label><input id="sp" list="al" placeholder="Type a new area or choose one"><datalist id="al">'+areas().map(function(a){return '<option value="'+esc(a)+'">'}).join('')+'</datalist><label>Mobile number</label><input id="sm" type="tel" inputmode="tel"><button onclick="addShop()">Add shop</button></div><div class="card">';
+  h+=S.shops.length?S.shops.map(function(s){return '<div class="row"><div>'+esc(s.name)+(s.place?' · '+esc(s.place):'')+'<small><a class="tel" href="tel:'+esc(s.mobile)+'">'+esc(s.mobile)+'</a></small></div><div style="text-align:right">'+balTxt(bal(s.id))+'<br>'+(ADMIN?'<button class="sm" style="color:var(--acc)" onclick="editShop(\''+s.id+'\')">Edit</button> <button class="sm" onclick="delShop(\''+s.id+'\')">Delete</button>':'')+'</div></div>'}).join(''):'<small>No shops yet.</small>';
   return h+'</div><small style="color:var(--mute)">Data syncs live across all logged-in devices.</small>';
 }
 function addShop(){
   if(!v('sn').trim()){alert('Enter shop name.');return}
-  DB.add('shops',{id:uid(),name:v('sn').trim(),mobile:v('sm').trim()});
+  DB.add('shops',{id:uid(),name:v('sn').trim(),place:v('sp').trim(),mobile:v('sm').trim()});
 }
 function delShop(id){
   if(!ADMIN){alert('Only admin can delete.');return}
   if(S.sales.some(function(x){return x.shop===id})){alert('This shop has entries, so it cannot be deleted.');return}
   DB.del('shops',id);
+}
+function editShop(id){
+  if(!ADMIN){alert('Only admin can edit.');return}
+  var sh=S.shops.find(function(x){return x.id===id});if(!sh)return;
+  var n=prompt('Shop / client name:',sh.name);if(n===null||!n.trim())return;
+  var pl=prompt('Shop area:',sh.place||'');if(pl===null)return;
+  var m=prompt('Mobile number:',sh.mobile||'');if(m===null)return;
+  DB.add('shops',{id:id,name:n.trim(),place:pl.trim(),mobile:m.trim()});
 }
 function del(k,id){if(!ADMIN){alert('Only admin can delete.');return}if(!confirm('Delete this entry?'))return;DB.del(k,id)}
 
@@ -225,9 +237,9 @@ function report(){
 }
 function exp(t){
   var r;
-  if(t==='s'){r=[['Bill','Date','Shop','Mobile','Item','Qty','Rate','Amount','Received']].concat(S.sales.filter(inR).sort(function(a,b){return a.date<b.date?-1:1}).map(function(x){var sh=S.shops.find(function(q){return q.id===x.shop})||{};return [x.bill||'',x.date,sh.name||'',sh.mobile||'',x.item||'Payment received',x.qty,x.rate,x.amount,x.paid]}))}
+  if(t==='s'){r=[['Bill','Date','Shop','Place','Mobile','Item','Qty','Rate','Amount','Received']].concat(S.sales.filter(inR).sort(function(a,b){return a.date<b.date?-1:1}).map(function(x){var sh=S.shops.find(function(q){return q.id===x.shop})||{};return [x.bill||'',x.date,sh.name||'',sh.place||'',sh.mobile||'',x.item||'Payment received',x.qty,x.rate,x.amount,x.paid]}))}
   else if(t==='b'){r=[['Date','Item','Supplier','Qty','Rate','Amount']].concat(S.buys.filter(inR).map(function(x){return [x.date,x.item,x.supplier,x.qty,x.rate,x.amount]}))}
-  else{r=[['Shop','Mobile','Total sales','Total received','Balance (positive = shop owes)']].concat(S.shops.map(function(sh){var a=S.sales.filter(function(x){return x.shop===sh.id});return [sh.name,sh.mobile,sum(a,'amount'),sum(a,'paid'),bal(sh.id)]}))}
+  else{r=[['Shop','Place','Mobile','Total sales','Total received','Balance (positive = shop owes)']].concat(S.shops.map(function(sh){var a=S.sales.filter(function(x){return x.shop===sh.id});return [sh.name,sh.place||'',sh.mobile,sum(a,'amount'),sum(a,'paid'),bal(sh.id)]}))}
   var c='\ufeff'+r.map(function(row){return row.map(function(c){return '"'+String(c==null?'':c).replace(/"/g,'""')+'"'}).join(',')}).join('\r\n');
   var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([c],{type:'text/csv;charset=utf-8'}));
   a.download='frutberry-'+({s:'sales',b:'purchases',h:'balances'}[t])+'-'+rf+'-to-'+rt+'.csv';
