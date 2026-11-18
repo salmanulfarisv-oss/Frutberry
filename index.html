@@ -36,6 +36,7 @@ h3{margin:14px 0 2px;font-size:15px}
 a.tel{color:var(--acc)}
 .tot{font-weight:700;margin-top:8px}
 #login{position:fixed;inset:0;background:var(--bg);z-index:9;padding:60px 20px;display:block}#login .card{max-width:360px;margin:auto}#err{color:var(--red);font-size:13px;margin-top:8px}
+@media print{header,nav,.no-print,main>*:not(#bill){display:none!important}#bill{border:0}body{background:#fff;color:#000}}
 </style>
 </head>
 <body>
@@ -106,31 +107,77 @@ function ledger(id){
   var rows=S.sales.filter(function(x){return x.shop===id}).sort(function(a,b){return a.date<b.date?-1:1}),run=0;
   var s=S.shops.find(function(x){return x.id===id})||{name:'',mobile:''};
   var h='<button class="sm" style="color:var(--acc)" onclick="open=null;render()">← Back</button><h3>'+esc(s.name)+'</h3><small>'+esc(s.mobile)+'</small><div class="card">';
-  h+=rows.length?rows.map(function(x){run+=x.amount-x.paid;return '<div class="row"><div>'+esc(x.item||'Payment received')+'<small>'+x.date+(x.qty?' · '+x.qty+' × '+x.rate:'')+'</small></div><div style="text-align:right">'+(x.amount?'Sale '+money(x.amount)+'<br>':'')+(x.paid?'<span class="green">Paid '+money(x.paid)+'</span><br>':'')+'<small>Balance '+money(run)+'</small></div></div>'}).join(''):'<small>No entries yet.</small>';
+  h+=rows.length?rows.map(function(x){run+=x.amount-x.paid;return '<div class="row"><div>'+(x.bill?'#'+x.bill+' · ':'')+esc(x.item||'Payment received')+'<small>'+x.date+(x.qty?' · '+x.qty+' × '+x.rate:'')+'</small></div><div style="text-align:right">'+(x.amount?'Sale '+money(x.amount)+'<br>':'')+(x.paid?'<span class="green">Paid '+money(x.paid)+'</span><br>':'')+'<small>Balance '+money(run)+'</small></div></div>'}).join(''):'<small>No entries yet.</small>';
   return h+'</div><div class="tot">Current balance: '+balTxt(bal(id))+'</div>';
 }
 
+var cart=[],curShop='',curPaid='',openBill=0;
+function nextBill(){return S.sales.reduce(function(m,x){return Math.max(m,x.bill||0)},0)+1}
+function remember(){var a=document.getElementById('sh'),b=document.getElementById('pd');if(a)curShop=a.value;if(b)curPaid=b.value}
+function cartQty(k){return cart.filter(function(l){return ikey(l.item)===k}).reduce(function(a,l){return a+l.qty},0)}
 function sales(){
   if(!S.shops.length)return '<div class="card">Add a shop first in the Shops tab.</div>';
-  var h=dateBox()+'<div class="card"><label>Shop</label><select id="sh">'+S.shops.map(function(s){return '<option value="'+s.id+'">'+esc(s.name)+'</option>'}).join('')+'</select>'+
-   '<label>Entry type</label><select id="ty" onchange="calc()"><option value="s">Sale (juice items)</option><option value="p">Payment received only</option></select>'+
-   '<label>Item (from purchases)</label><select id="it"><option value="">Choose item</option>'+stockList().map(function(o){return '<option value="'+esc(o.name)+'">'+esc(o.name)+' — '+o.left+' left</option>'}).join('')+'</select>'+
-   '<div class="grid"><div><label>Quantity</label><input id="q" type="number" inputmode="decimal" oninput="calc()"></div><div><label>Rate</label><input id="r" type="number" inputmode="decimal" oninput="calc()"></div></div>'+
-   '<label>Amount received now (₹)</label><input id="pd" type="number" inputmode="decimal" value="0">'+
-   '<div class="tot" id="tt">Total: ₹0</div><button onclick="addSale()">Save entry</button></div>';
-  var d=S.sales.filter(function(x){return x.date===date});
-  h+='<h3>Entries on '+date+'</h3><div class="card">'+(d.length?d.map(function(x){return '<div class="row"><div>'+esc(shopName(x.shop))+'<small>'+esc(x.item||'Payment received')+(x.qty?' · '+x.qty+' × '+x.rate:'')+'</small></div><div style="text-align:right">'+money(x.amount)+'<small>paid '+money(x.paid)+'</small>'+(ADMIN?'<button class="sm" onclick="del(\'sales\',\''+x.id+'\')">Delete</button>':'')+'</div></div>'}).join(''):'<small>Nothing today.</small>')+'</div>';
-  return h;
+  var tot=cart.reduce(function(a,l){return a+l.qty*l.rate},0);
+  var h=billCard()+dateBox()+'<div class="card"><label>Shop</label><select id="sh" onchange="remember()">'+S.shops.map(function(s){return '<option value="'+s.id+'"'+(s.id===curShop?' selected':'')+'>'+esc(s.name)+'</option>'}).join('')+'</select>'+
+   '<h3>Add items to bill</h3><label>Item (from purchases)</label><select id="it"><option value="">Choose item</option>'+stockList().map(function(o){return '<option value="'+esc(o.name)+'">'+esc(o.name)+' — '+o.left+' left</option>'}).join('')+'</select>'+
+   '<div class="grid"><div><label>Quantity</label><input id="q" type="number" inputmode="decimal"></div><div><label>Rate</label><input id="r" type="number" inputmode="decimal"></div></div>'+
+   '<button onclick="addLine()">+ Add to bill</button></div>';
+  h+='<div class="card"><b>Current bill</b>'+(cart.length?cart.map(function(l,i){return '<div class="row"><div>'+esc(l.item)+'<small>'+l.qty+' × '+l.rate+'</small></div><div style="text-align:right">'+money(l.qty*l.rate)+'<br><button class="sm" onclick="rmLine('+i+')">Remove</button></div></div>'}).join('')+'<div class="tot">Bill total: '+money(tot)+'</div>':'<br><small>No items added yet.</small>')+
+   '<label>Amount received now (₹)</label><input id="pd" type="number" inputmode="decimal" value="'+esc(curPaid)+'" oninput="curPaid=this.value"><button onclick="saveBill()">'+(cart.length?'Save bill':'Save payment only')+'</button></div>';
+  var d=S.sales.filter(function(x){return x.date===date}),seen={},rows=[];
+  d.forEach(function(x){
+    if(x.bill){if(seen[x.bill])return;seen[x.bill]=1;var L=d.filter(function(y){return y.bill===x.bill});
+      rows.push('<div class="row"><div>'+esc(shopName(x.shop))+' · Bill #'+x.bill+'<small>'+L.map(function(y){return esc(y.item)+' '+y.qty}).join(', ')+'</small></div><div style="text-align:right">'+money(sum(L,'amount'))+'<small>paid '+money(sum(L,'paid'))+'</small><button class="sm" style="color:var(--acc)" onclick="viewBill('+x.bill+')">View</button> '+(ADMIN?'<button class="sm" onclick="delBill('+x.bill+')">Delete</button>':'')+'</div></div>');
+    }else{
+      rows.push('<div class="row"><div>'+esc(shopName(x.shop))+'<small>'+esc(x.item||'Payment received')+'</small></div><div style="text-align:right">'+money(x.amount)+'<small>paid '+money(x.paid)+'</small>'+(ADMIN?'<button class="sm" onclick="del(\'sales\',\''+x.id+'\')">Delete</button>':'')+'</div></div>');
+    }
+  });
+  return h+'<h3>Entries on '+date+'</h3><div class="card">'+(rows.length?rows.join(''):'<small>Nothing today.</small>')+'</div>';
 }
-function calc(){var el=document.getElementById('tt');if(!el)return;var p=v('ty')==='p';el.textContent='Total: '+money(p?0:(+v('q')||0)*(+v('r')||0))}
-function addSale(){
-  var p=v('ty')==='p',q=+v('q')||0,r=+v('r')||0,paid=+v('pd')||0,amt=p?0:q*r;
-  if(!p&&(!v('it').trim()||!amt)){alert('Enter item, quantity and rate.');return}
-  if(p&&!paid){alert('Enter the amount received.');return}
-  if(!p){var si=stockList().find(function(k){return k.key===ikey(v('it'))});if(si&&q>si.left&&!confirm('Only '+si.left+' in stock. Continue?'))return}
-  DB.add('sales',{id:uid(),date:date,shop:v('sh'),item:p?'':v('it').trim(),qty:p?0:q,rate:p?0:r,amount:amt,paid:paid});
+function addLine(){
+  remember();
+  var it=v('it'),q=+v('q')||0,r=+v('r')||0;
+  if(!it||!q||!r){alert('Choose item and enter quantity and rate.');return}
+  var si=stockList().find(function(k){return k.key===ikey(it)});
+  if(si&&q+cartQty(si.key)>si.left&&!confirm('Only '+si.left+' in stock. Continue?'))return;
+  cart.push({item:it,qty:q,rate:r});render();
 }
-
+function rmLine(i){remember();cart.splice(i,1);render()}
+function saveBill(){
+  remember();
+  var shop=v('sh'),paid=+v('pd')||0;
+  if(!shop){alert('Choose a shop.');return}
+  if(!cart.length){
+    if(!paid){alert('Add items to the bill, or enter an amount received.');return}
+    DB.add('sales',{id:uid(),date:date,shop:shop,item:'',qty:0,rate:0,amount:0,paid:paid,bill:0});
+    curPaid='';render();return;
+  }
+  var n=nextBill();
+  cart.forEach(function(l,i){DB.add('sales',{id:uid(),date:date,shop:shop,item:l.item,qty:l.qty,rate:l.rate,amount:l.qty*l.rate,paid:i===0?paid:0,bill:n})});
+  cart=[];curPaid='';openBill=n;render();
+}
+function billData(n){
+  var L=S.sales.filter(function(x){return x.bill===n});if(!L.length)return null;
+  var sh=S.shops.find(function(s){return s.id===L[0].shop})||{name:'(deleted)',mobile:''};
+  return {no:n,date:L[0].date,shop:sh,lines:L,total:sum(L,'amount'),paid:sum(L,'paid'),bal:bal(L[0].shop)};
+}
+function billText(b){
+  var t='*Frutberry*\nBill #'+b.no+'  '+b.date+'\nShop: '+b.shop.name+'\n\n';
+  b.lines.forEach(function(l){t+=l.item+' '+l.qty+' x '+l.rate+' = '+money(l.amount)+'\n'});
+  t+='\nTotal: '+money(b.total)+'\nPaid: '+money(b.paid)+'\nDue on this bill: '+money(b.total-b.paid)+'\nShop balance: '+(b.bal>0?money(b.bal)+' due':b.bal<0?money(-b.bal)+' advance':'Nil')+'\nThank you!';
+  return t;
+}
+function billCard(){
+  if(!openBill)return '';var b=billData(openBill);if(!b)return '';
+  return '<div class="card" id="bill"><b>🍓 Frutberry — Bill #'+b.no+'</b><small style="color:var(--mute);display:block">'+b.date+' · '+esc(b.shop.name)+'</small>'+
+   b.lines.map(function(l){return '<div class="row"><div>'+esc(l.item)+'<small>'+l.qty+' × '+l.rate+'</small></div><div>'+money(l.amount)+'</div></div>'}).join('')+
+   '<div class="tot">Total: '+money(b.total)+'</div><div>Paid: '+money(b.paid)+' · Due on bill: '+money(b.total-b.paid)+'</div><div>Shop balance: '+balTxt(b.bal)+'</div>'+
+   '<div class="grid no-print"><button onclick="shareBill()">WhatsApp</button><button onclick="window.print()">Print / PDF</button></div>'+
+   '<button class="no-print" style="background:transparent;color:var(--mute);border:1px solid var(--line)" onclick="openBill=0;render()">Close</button></div>';
+}
+function shareBill(){var b=billData(openBill);if(!b)return;var d=String(b.shop.mobile||'').replace(/\D/g,'');if(d.length===10)d='91'+d;window.open('https://wa.me/'+d+'?text='+encodeURIComponent(billText(b)),'_blank')}
+function viewBill(n){openBill=n;render();window.scrollTo(0,0)}
+function delBill(n){if(!ADMIN){alert('Only admin can delete.');return}if(!confirm('Delete whole bill #'+n+'?'))return;S.sales.filter(function(x){return x.bill===n}).forEach(function(x){DB.del('sales',x.id)});if(openBill===n)openBill=0}
 function buys(){
   var h=dateBox()+'<div class="card"><label>Item purchased (finished juice)</label><input id="bi" list="il" placeholder="e.g. Orange juice 1L"><datalist id="il">'+stockList().map(function(o){return '<option value="'+esc(o.name)+'">'}).join('')+'</datalist>'+
    (ADMIN?'<label>Low stock alert at (optional)</label><input id="bm" type="number" inputmode="decimal" placeholder="default 5">':'')+
@@ -178,7 +225,7 @@ function report(){
 }
 function exp(t){
   var r;
-  if(t==='s'){r=[['Date','Shop','Mobile','Item','Qty','Rate','Amount','Received']].concat(S.sales.filter(inR).sort(function(a,b){return a.date<b.date?-1:1}).map(function(x){var sh=S.shops.find(function(q){return q.id===x.shop})||{};return [x.date,sh.name||'',sh.mobile||'',x.item||'Payment received',x.qty,x.rate,x.amount,x.paid]}))}
+  if(t==='s'){r=[['Bill','Date','Shop','Mobile','Item','Qty','Rate','Amount','Received']].concat(S.sales.filter(inR).sort(function(a,b){return a.date<b.date?-1:1}).map(function(x){var sh=S.shops.find(function(q){return q.id===x.shop})||{};return [x.bill||'',x.date,sh.name||'',sh.mobile||'',x.item||'Payment received',x.qty,x.rate,x.amount,x.paid]}))}
   else if(t==='b'){r=[['Date','Item','Supplier','Qty','Rate','Amount']].concat(S.buys.filter(inR).map(function(x){return [x.date,x.item,x.supplier,x.qty,x.rate,x.amount]}))}
   else{r=[['Shop','Mobile','Total sales','Total received','Balance (positive = shop owes)']].concat(S.shops.map(function(sh){var a=S.sales.filter(function(x){return x.shop===sh.id});return [sh.name,sh.mobile,sum(a,'amount'),sum(a,'paid'),bal(sh.id)]}))}
   var c='\ufeff'+r.map(function(row){return row.map(function(c){return '"'+String(c==null?'':c).replace(/"/g,'""')+'"'}).join(',')}).join('\r\n');
